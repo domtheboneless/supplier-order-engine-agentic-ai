@@ -1,87 +1,150 @@
-# Jira MCP Server
+# Supplier Order Engine
 
-Server MCP locale per collegare un client compatibile MCP a Jira tramite REST API.
+Servizio HTTP in TypeScript per la consultazione degli ordini, creato a partire dal task Jira `SOE-1`.
 
 ## Cosa fa
 
-Espone questi tool:
+Espone questi endpoint REST:
 
-- `jira_list_projects`
-- `jira_get_issue`
-- `jira_search_issues`
-- `jira_create_issue`
-- `jira_add_comment`
-- `jira_list_transitions`
-- `jira_transition_issue`
+- `GET /health`
+- `GET /orders`
+- `GET /orders/{orderId}`
+
+Il servizio include:
+
+- dataset seed iniziale per simulare la sorgente dati
+- lista ordini con filtri, ordinamento e paginazione server-side
+- dettaglio singolo ordine con righe articolo
+- validazione input e gestione errori coerente
+- logging minimale delle richieste
+- test automatici unitari e di integrazione
 
 ## Requisiti
 
 - Node.js 20 o superiore
-- Un'istanza Jira raggiungibile via HTTPS
-- Credenziali Jira:
-  - Jira Cloud: `JIRA_EMAIL` + `JIRA_API_TOKEN`
-  - In alternativa: `JIRA_BEARER_TOKEN`
-
-Atlassian per Jira Cloud raccomanda API token o OAuth; per uno strumento locale semplice questo progetto usa come default `email + API token`.
 
 ## Configurazione
 
 1. Copia `.env.example` in `.env`
-2. Inserisci i valori reali
+2. Imposta le variabili desiderate
 
 Variabili supportate:
 
-- `JIRA_BASE_URL`
-- `JIRA_EMAIL`
-- `JIRA_API_TOKEN`
-- `JIRA_BEARER_TOKEN`
-- `JIRA_DEFAULT_PROJECT_KEY`
-- `JIRA_DEFAULT_ISSUE_TYPE`
+- `PORT`
+- `LOG_LEVEL` (`debug`, `info`, `warn`, `error`)
 
 Esempio:
 
 ```env
-JIRA_BASE_URL=https://acme.atlassian.net
-JIRA_EMAIL=team@example.com
-JIRA_API_TOKEN=...
-JIRA_DEFAULT_PROJECT_KEY=OPS
-JIRA_DEFAULT_ISSUE_TYPE=Task
+PORT=3000
+LOG_LEVEL=info
 ```
 
 ## Avvio
 
 ```bash
-npm install
 npm run build
 npm start
 ```
 
-## Configurazione in un client MCP
+Per sviluppo:
 
-Esempio generico:
+```bash
+npm run dev
+```
+
+Per test:
+
+```bash
+npm test
+```
+
+## API
+
+### `GET /orders`
+
+Parametri supportati:
+
+- `page`
+- `pageSize`
+- `status`
+- `supplierId`
+- `createdFrom`
+- `createdTo`
+- `sortBy` (`createdAt`, `total`)
+- `sortOrder` (`asc`, `desc`)
+
+Esempio:
+
+```http
+GET /orders?page=1&pageSize=2&status=PROCESSING&sortBy=createdAt&sortOrder=desc
+```
+
+Risposta:
 
 ```json
 {
-  "mcpServers": {
-    "jira": {
-      "command": "node",
-      "args": ["C:/Users/vito.sebastiani/Documents/AI - Question/build/index.js"],
-      "env": {
-        "JIRA_BASE_URL": "https://acme.atlassian.net",
-        "JIRA_EMAIL": "team@example.com",
-        "JIRA_API_TOKEN": "your_api_token",
-        "JIRA_DEFAULT_PROJECT_KEY": "OPS",
-        "JIRA_DEFAULT_ISSUE_TYPE": "Task"
-      }
+  "data": [
+    {
+      "id": "SO-1002",
+      "status": "PROCESSING",
+      "createdAt": "2026-05-18T08:30:00.000Z",
+      "updatedAt": "2026-05-18T12:00:00.000Z",
+      "supplier": {
+        "id": "SUP-002",
+        "name": "Blue Ocean Logistics"
+      },
+      "totals": {
+        "subtotal": 900,
+        "tax": 198,
+        "total": 1098,
+        "currency": "EUR"
+      },
+      "itemCount": 2
     }
+  ],
+  "pagination": {
+    "page": 1,
+    "pageSize": 2,
+    "totalItems": 1,
+    "totalPages": 1
+  },
+  "filters": {
+    "status": "PROCESSING",
+    "supplierId": null,
+    "createdFrom": null,
+    "createdTo": null
+  },
+  "sort": {
+    "by": "createdAt",
+    "order": "desc"
   }
 }
 ```
 
-Se preferisci usare il file `.env`, puoi avviare il server dalla cartella del progetto con `npm start`.
+### `GET /orders/{orderId}`
 
-## Note utili
+Restituisce il dettaglio completo dell'ordine, incluse le righe articolo.
 
-- Le descrizioni e i commenti vengono inviati a Jira in Atlassian Document Format (ADF), convertendo testo semplice in un documento base.
-- Le risposte del server restituiscono sia testo leggibile sia `structuredContent`, utile ai client MCP che lo supportano.
-- Il tool `jira_transition_issue` accetta `transitionId` oppure `transitionName`.
+## Gestione errori
+
+- `400` per input non validi
+- `404` per ordine non trovato o rotta inesistente
+- `500` per errori inattesi
+
+Formato errore:
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "The request is invalid.",
+    "details": [
+      {
+        "path": "page",
+        "message": "Too small: expected number to be >=1"
+      }
+    ]
+  }
+}
+```

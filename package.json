@@ -1,7 +1,7 @@
 {
-  "name": "jira-mcp-server",
+  "name": "supplier-order-engine-agentic-ai",
   "version": "0.1.0",
-  "description": "MCP server for Jira issue workflows",
+  "description": "Supplier Order Engine service for order visualization",
   "type": "module",
   "private": true,
   "engines": {
@@ -11,7 +11,8 @@
     "build": "tsc -p tsconfig.json",
     "check": "tsc --noEmit -p tsconfig.json",
     "dev": "tsx watch src/index.ts",
-    "start": "node build/index.js"
+    "start": "node build/index.js",
+    "test": "npm run build && node build/tests/run-tests.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.4",
