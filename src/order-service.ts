@@ -1,6 +1,9 @@
-import type { ListOrdersInput, Order } from "./domain.js";
+import type { CreateOrderInput, CreateOrderItemInput, ListOrdersInput, Order, OrderItem } from "./domain.js";
 import { OrderNotFoundError } from "./errors.js";
 import type { OrderRepository } from "./order-repository.js";
+
+const DEFAULT_CURRENCY = "EUR";
+const DEFAULT_TAX_RATE = 0.22;
 
 function compareValues(left: number | string, right: number | string, order: "asc" | "desc") {
   const factor = order === "asc" ? 1 : -1;
@@ -41,6 +44,31 @@ function mapDetail(order: Order) {
     ...mapSummary(order),
     items: order.items,
   };
+}
+
+function roundMoney(value: number) {
+  return Number(value.toFixed(2));
+}
+
+function mapCreateItem(item: CreateOrderItemInput): OrderItem {
+  return {
+    ...item,
+    lineTotal: roundMoney(item.quantity * item.unitPrice),
+  };
+}
+
+function getNextOrderId(existingOrders: Order[]) {
+  const currentMax = existingOrders.reduce((max, order) => {
+    const match = /^SO-(\d+)$/.exec(order.id);
+
+    if (!match) {
+      return max;
+    }
+
+    return Math.max(max, Number(match[1]));
+  }, 1000);
+
+  return `SO-${currentMax + 1}`;
 }
 
 export class OrderService {
@@ -96,6 +124,33 @@ export class OrderService {
 
     return {
       data: mapDetail(order),
+    };
+  }
+
+  createOrder(input: CreateOrderInput) {
+    const items = input.items.map(mapCreateItem);
+    const subtotal = roundMoney(items.reduce((sum, item) => sum + item.lineTotal, 0));
+    const tax = roundMoney(subtotal * DEFAULT_TAX_RATE);
+    const total = roundMoney(subtotal + tax);
+    const now = new Date().toISOString();
+    const existingOrders = this.repository.list();
+
+    const order: Order = {
+      id: getNextOrderId(existingOrders),
+      supplierId: input.supplierId,
+      supplierName: input.supplierName,
+      status: "CREATED",
+      createdAt: now,
+      updatedAt: now,
+      currency: input.currency ?? DEFAULT_CURRENCY,
+      subtotal,
+      tax,
+      total,
+      items,
+    };
+
+    return {
+      data: mapDetail(this.repository.create(order)),
     };
   }
 }

@@ -1,6 +1,6 @@
 # Supplier Order Engine
 
-Servizio HTTP in TypeScript per la consultazione degli ordini, creato a partire dal task Jira `SOE-1`.
+Servizio HTTP in TypeScript per la consultazione e creazione degli ordini, creato a partire dai task Jira `SOE-1` e `SOE-2`.
 
 ## Cosa fa
 
@@ -9,6 +9,9 @@ Espone questi endpoint REST:
 - `GET /health`
 - `GET /orders`
 - `GET /orders/{orderId}`
+- `POST /orders`
+- `GET /openapi.json`
+- `GET /docs`
 
 Il servizio include:
 
@@ -125,6 +128,66 @@ Risposta:
 ### `GET /orders/{orderId}`
 
 Restituisce il dettaglio completo dell'ordine, incluse le righe articolo.
+
+### `POST /orders`
+
+Crea un nuovo ordine con stato iniziale `CREATED`.
+
+Payload di esempio:
+
+```json
+{
+  "supplierId": "SUP-010",
+  "supplierName": "Future Parts",
+  "currency": "EUR",
+  "items": [
+    {
+      "sku": "FP-001",
+      "name": "Sensor Board",
+      "quantity": 2,
+      "unitPrice": 50
+    }
+  ]
+}
+```
+
+Risposta:
+
+```json
+{
+  "data": {
+    "id": "SO-1007",
+    "status": "CREATED",
+    "createdAt": "2026-05-29T13:00:00.000Z",
+    "updatedAt": "2026-05-29T13:00:00.000Z",
+    "supplier": {
+      "id": "SUP-010",
+      "name": "Future Parts"
+    },
+    "totals": {
+      "subtotal": 100,
+      "tax": 22,
+      "total": 122,
+      "currency": "EUR"
+    },
+    "itemCount": 1,
+    "items": [
+      {
+        "sku": "FP-001",
+        "name": "Sensor Board",
+        "quantity": 2,
+        "unitPrice": 50,
+        "lineTotal": 100
+      }
+    ]
+  }
+}
+```
+
+## OpenAPI / Swagger
+
+- `GET /openapi.json` espone il documento OpenAPI
+- `GET /docs` espone una pagina Swagger UI puntata sul documento OpenAPI
 
 ## Gestione errori
 

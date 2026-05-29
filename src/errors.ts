@@ -17,6 +17,13 @@ export class ValidationError extends HttpError {
   }
 }
 
+export class BadRequestError extends HttpError {
+  constructor(code: string, message: string, details?: unknown) {
+    super(400, code, message, details);
+    this.name = "BadRequestError";
+  }
+}
+
 export class NotFoundError extends HttpError {
   constructor(code: string, message: string, details?: unknown) {
     super(404, code, message, details);

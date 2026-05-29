@@ -2,9 +2,10 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { randomUUID } from "node:crypto";
 import { URL } from "node:url";
 import { ZodError, z } from "zod";
-import { HttpError, ValidationError } from "./errors.js";
+import { BadRequestError, HttpError, ValidationError } from "./errors.js";
 import { ORDER_STATUSES } from "./domain.js";
 import { createLogger, type Logger } from "./logger.js";
+import { createOpenApiDocument } from "./openapi.js";
 import { createOrderRepository } from "./order-repository.js";
 import { OrderService } from "./order-service.js";
 
@@ -82,10 +83,32 @@ const orderIdSchema = z.object({
   orderId: z.string().trim().min(1),
 });
 
+const createOrderBodySchema = z.object({
+  supplierId: z.string().trim().min(1),
+  supplierName: z.string().trim().min(1),
+  currency: z.string().trim().min(1).default("EUR"),
+  items: z
+    .array(
+      z.object({
+        sku: z.string().trim().min(1),
+        name: z.string().trim().min(1),
+        quantity: z.coerce.number().int().min(1),
+        unitPrice: z.coerce.number().positive(),
+      }),
+    )
+    .min(1),
+});
+
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown) {
   response.statusCode = statusCode;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
   response.end(JSON.stringify(payload, null, 2));
+}
+
+function sendHtml(response: ServerResponse, statusCode: number, html: string) {
+  response.statusCode = statusCode;
+  response.setHeader("Content-Type", "text/html; charset=utf-8");
+  response.end(html);
 }
 
 function normalizeError(error: unknown) {
@@ -106,7 +129,52 @@ function normalizeError(error: unknown) {
 }
 
 async function readRequest(_request: IncomingMessage) {
-  return undefined;
+  return new Promise<string>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+
+    _request.on("data", (chunk) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+
+    _request.on("end", () => {
+      resolve(Buffer.concat(chunks).toString("utf8"));
+    });
+
+    _request.on("error", reject);
+  });
+}
+
+function parseJsonBody<T>(payload: string): T {
+  if (!payload.trim()) {
+    throw new BadRequestError("EMPTY_BODY", "The request body is required.");
+  }
+
+  try {
+    return JSON.parse(payload) as T;
+  } catch {
+    throw new BadRequestError("INVALID_JSON", "The request body must be valid JSON.");
+  }
+}
+
+function buildSwaggerHtml() {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Supplier Order Engine API Docs</title>
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script>
+      window.ui = SwaggerUIBundle({
+        url: "/openapi.json",
+        dom_id: "#swagger-ui"
+      });
+    </script>
+  </body>
+</html>`;
 }
 
 async function handleRequest(
@@ -114,7 +182,7 @@ async function handleRequest(
   response: ServerResponse,
   service: OrderService,
 ) {
-  await readRequest(request);
+  const body = await readRequest(request);
 
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
   const method = request.method ?? "GET";
@@ -134,11 +202,29 @@ async function handleRequest(
     return;
   }
 
+  if (method === "POST" && url.pathname === "/orders") {
+    const input = createOrderBodySchema.parse(parseJsonBody(body));
+    const created = service.createOrder(input);
+    response.setHeader("Location", `/orders/${created.data.id}`);
+    sendJson(response, 201, created);
+    return;
+  }
+
   const orderMatch = /^\/orders\/([^/]+)$/.exec(url.pathname);
 
   if (method === "GET" && orderMatch) {
     const { orderId } = orderIdSchema.parse({ orderId: decodeURIComponent(orderMatch[1]) });
     sendJson(response, 200, service.getOrderById(orderId));
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/openapi.json") {
+    sendJson(response, 200, createOpenApiDocument());
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/docs") {
+    sendHtml(response, 200, buildSwaggerHtml());
     return;
   }
 

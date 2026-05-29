@@ -1,19 +1,28 @@
 import type { Order } from "./domain.js";
 import { seedOrders } from "./seed-data.js";
 
+function cloneOrder(order: Order): Order {
+  return {
+    ...order,
+    items: order.items.map((item) => ({ ...item })),
+  };
+}
+
 export interface OrderRepository {
   list(): Order[];
   findById(orderId: string): Order | undefined;
+  create(order: Order): Order;
 }
 
 export class InMemoryOrderRepository implements OrderRepository {
-  constructor(private readonly orders: Order[]) {}
+  private readonly orders: Order[];
+
+  constructor(orders: Order[]) {
+    this.orders = orders.map(cloneOrder);
+  }
 
   list() {
-    return this.orders.map((order) => ({
-      ...order,
-      items: order.items.map((item) => ({ ...item })),
-    }));
+    return this.orders.map(cloneOrder);
   }
 
   findById(orderId: string) {
@@ -23,10 +32,12 @@ export class InMemoryOrderRepository implements OrderRepository {
       return undefined;
     }
 
-    return {
-      ...order,
-      items: order.items.map((item) => ({ ...item })),
-    };
+    return cloneOrder(order);
+  }
+
+  create(order: Order) {
+    this.orders.push(cloneOrder(order));
+    return cloneOrder(order);
   }
 }
 

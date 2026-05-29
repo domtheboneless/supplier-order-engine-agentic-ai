@@ -19,6 +19,13 @@ export type OrderItem = {
   lineTotal: number;
 };
 
+export type CreateOrderItemInput = {
+  sku: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+};
+
 export type Order = {
   id: string;
   supplierId: string;
@@ -42,4 +49,11 @@ export type ListOrdersInput = {
   createdTo?: string;
   sortBy: OrderSortBy;
   sortOrder: SortOrder;
+};
+
+export type CreateOrderInput = {
+  supplierId: string;
+  supplierName: string;
+  currency?: string;
+  items: CreateOrderItemInput[];
 };
