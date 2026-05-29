@@ -3,15 +3,18 @@ import { randomUUID } from "node:crypto";
 import { URL } from "node:url";
 import { ZodError, z } from "zod";
 import { BadRequestError, HttpError, ValidationError } from "./errors.js";
-import { ORDER_STATUSES } from "./domain.js";
+import { ORDER_STATUSES, SUPPLY_STATUSES } from "./domain.js";
 import { createLogger, type Logger } from "./logger.js";
 import { createOpenApiDocument } from "./openapi.js";
 import { createOrderRepository } from "./order-repository.js";
 import { OrderService } from "./order-service.js";
+import { createSupplyRepository } from "./supply-repository.js";
+import { SupplyService } from "./supply-service.js";
 
 type AppServerOptions = {
   logger?: Logger;
-  service?: OrderService;
+  orderService?: OrderService;
+  supplyService?: SupplyService;
 };
 
 function parseDateInput(value: string, endOfDay: boolean) {
@@ -99,6 +102,46 @@ const createOrderBodySchema = z.object({
     .min(1),
 });
 
+const listSuppliesQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  status: z.enum(SUPPLY_STATUSES).optional(),
+  supplierId: z.string().trim().min(1).optional(),
+  category: z.string().trim().min(1).optional(),
+  sortBy: z.enum(["updatedAt", "quantityAvailable", "name"]).default("updatedAt"),
+  sortOrder: z.enum(["asc", "desc"]).default("desc"),
+});
+
+const supplyIdSchema = z.object({
+  supplyId: z.string().trim().min(1),
+});
+
+const createSupplyBodySchema = z.object({
+  supplierId: z.string().trim().min(1),
+  supplierName: z.string().trim().min(1),
+  name: z.string().trim().min(1),
+  category: z.string().trim().min(1),
+  quantityAvailable: z.coerce.number().int().min(0),
+  unitPrice: z.coerce.number().positive(),
+  currency: z.string().trim().min(1).default("EUR"),
+  status: z.enum(SUPPLY_STATUSES).optional(),
+});
+
+const updateSupplyBodySchema = z
+  .object({
+    supplierId: z.string().trim().min(1).optional(),
+    supplierName: z.string().trim().min(1).optional(),
+    name: z.string().trim().min(1).optional(),
+    category: z.string().trim().min(1).optional(),
+    quantityAvailable: z.coerce.number().int().min(0).optional(),
+    unitPrice: z.coerce.number().positive().optional(),
+    currency: z.string().trim().min(1).optional(),
+    status: z.enum(SUPPLY_STATUSES).optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field must be provided.",
+  });
+
 function sendJson(response: ServerResponse, statusCode: number, payload: unknown) {
   response.statusCode = statusCode;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -180,7 +223,8 @@ function buildSwaggerHtml() {
 async function handleRequest(
   request: IncomingMessage,
   response: ServerResponse,
-  service: OrderService,
+  orderService: OrderService,
+  supplyService: SupplyService,
 ) {
   const body = await readRequest(request);
 
@@ -198,13 +242,13 @@ async function handleRequest(
 
   if (method === "GET" && url.pathname === "/orders") {
     const input = listOrdersQuerySchema.parse(Object.fromEntries(url.searchParams.entries()));
-    sendJson(response, 200, service.listOrders(input));
+    sendJson(response, 200, orderService.listOrders(input));
     return;
   }
 
   if (method === "POST" && url.pathname === "/orders") {
     const input = createOrderBodySchema.parse(parseJsonBody(body));
-    const created = service.createOrder(input);
+    const created = orderService.createOrder(input);
     response.setHeader("Location", `/orders/${created.data.id}`);
     sendJson(response, 201, created);
     return;
@@ -214,7 +258,42 @@ async function handleRequest(
 
   if (method === "GET" && orderMatch) {
     const { orderId } = orderIdSchema.parse({ orderId: decodeURIComponent(orderMatch[1]) });
-    sendJson(response, 200, service.getOrderById(orderId));
+    sendJson(response, 200, orderService.getOrderById(orderId));
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/supplies") {
+    const input = listSuppliesQuerySchema.parse(Object.fromEntries(url.searchParams.entries()));
+    sendJson(response, 200, supplyService.listSupplies(input));
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/supplies") {
+    const input = createSupplyBodySchema.parse(parseJsonBody(body));
+    const created = supplyService.createSupply(input);
+    response.setHeader("Location", `/supplies/${created.data.id}`);
+    sendJson(response, 201, created);
+    return;
+  }
+
+  const supplyMatch = /^\/supplies\/([^/]+)$/.exec(url.pathname);
+
+  if (method === "GET" && supplyMatch) {
+    const { supplyId } = supplyIdSchema.parse({ supplyId: decodeURIComponent(supplyMatch[1]) });
+    sendJson(response, 200, supplyService.getSupplyById(supplyId));
+    return;
+  }
+
+  if (method === "PUT" && supplyMatch) {
+    const { supplyId } = supplyIdSchema.parse({ supplyId: decodeURIComponent(supplyMatch[1]) });
+    const input = updateSupplyBodySchema.parse(parseJsonBody(body));
+    sendJson(response, 200, supplyService.updateSupply(supplyId, input));
+    return;
+  }
+
+  if (method === "DELETE" && supplyMatch) {
+    const { supplyId } = supplyIdSchema.parse({ supplyId: decodeURIComponent(supplyMatch[1]) });
+    sendJson(response, 200, supplyService.deleteSupply(supplyId));
     return;
   }
 
@@ -232,7 +311,8 @@ async function handleRequest(
 }
 
 export function createAppServer(options: AppServerOptions = {}): Server {
-  const service = options.service ?? new OrderService(createOrderRepository());
+  const orderService = options.orderService ?? new OrderService(createOrderRepository());
+  const supplyService = options.supplyService ?? new SupplyService(createSupplyRepository());
   const logger = options.logger ?? createLogger("info");
 
   return createServer(async (request, response) => {
@@ -242,7 +322,7 @@ export function createAppServer(options: AppServerOptions = {}): Server {
     const method = request.method ?? "GET";
 
     try {
-      await handleRequest(request, response, service);
+      await handleRequest(request, response, orderService, supplyService);
     } catch (error) {
       const normalized = normalizeError(error);
 

@@ -1,6 +1,6 @@
 # Supplier Order Engine
 
-Servizio HTTP in TypeScript per la consultazione e creazione degli ordini, creato a partire dai task Jira `SOE-1` e `SOE-2`.
+Servizio HTTP in TypeScript per la consultazione e creazione degli ordini e per la gestione CRUD delle forniture, creato a partire dai task Jira `SOE-1`, `SOE-2` e `SOE-3`.
 
 ## Cosa fa
 
@@ -10,6 +10,11 @@ Espone questi endpoint REST:
 - `GET /orders`
 - `GET /orders/{orderId}`
 - `POST /orders`
+- `GET /supplies`
+- `GET /supplies/{supplyId}`
+- `POST /supplies`
+- `PUT /supplies/{supplyId}`
+- `DELETE /supplies/{supplyId}`
 - `GET /openapi.json`
 - `GET /docs`
 
@@ -150,6 +155,55 @@ Payload di esempio:
   ]
 }
 ```
+
+### `GET /supplies`
+
+Restituisce l'elenco delle forniture con paginazione, filtri e ordinamento.
+
+Parametri supportati:
+
+- `page`
+- `pageSize`
+- `status`
+- `supplierId`
+- `category`
+- `sortBy` (`updatedAt`, `quantityAvailable`, `name`)
+- `sortOrder` (`asc`, `desc`)
+
+### `POST /supplies`
+
+Crea una nuova fornitura.
+
+Payload di esempio:
+
+```json
+{
+  "supplierId": "SUP-010",
+  "supplierName": "Future Parts",
+  "name": "Valve Kit",
+  "category": "Mechanical",
+  "quantityAvailable": 30,
+  "unitPrice": 49.9,
+  "currency": "EUR"
+}
+```
+
+### `PUT /supplies/{supplyId}`
+
+Aggiorna una fornitura esistente. Il body puo contenere uno o piu campi aggiornabili.
+
+Payload di esempio:
+
+```json
+{
+  "quantityAvailable": 10,
+  "status": "LOW_STOCK"
+}
+```
+
+### `DELETE /supplies/{supplyId}`
+
+Rimuove logicamente la fornitura dal dataset in-memory del servizio per l'esecuzione corrente.
 
 Risposta:
 

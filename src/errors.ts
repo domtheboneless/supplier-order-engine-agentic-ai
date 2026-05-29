@@ -37,3 +37,10 @@ export class OrderNotFoundError extends NotFoundError {
     this.name = "OrderNotFoundError";
   }
 }
+
+export class SupplyNotFoundError extends NotFoundError {
+  constructor(supplyId: string) {
+    super("SUPPLY_NOT_FOUND", `Supply ${supplyId} was not found.`, { supplyId });
+    this.name = "SupplyNotFoundError";
+  }
+}

@@ -1,9 +1,11 @@
 import { runHttpTests } from "./http.test.js";
 import { runOrderServiceTests } from "./order-service.test.js";
+import { runSupplyServiceTests } from "./supply-service.test.js";
 
 async function main() {
   const suites: Array<{ name: string; run: () => void | Promise<void> }> = [
     { name: "order-service", run: runOrderServiceTests },
+    { name: "supply-service", run: runSupplyServiceTests },
     { name: "http", run: runHttpTests },
   ];
 

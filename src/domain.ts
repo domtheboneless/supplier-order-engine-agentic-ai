@@ -57,3 +57,59 @@ export type CreateOrderInput = {
   currency?: string;
   items: CreateOrderItemInput[];
 };
+
+export const SUPPLY_STATUSES = [
+  "AVAILABLE",
+  "LOW_STOCK",
+  "OUT_OF_STOCK",
+  "DISCONTINUED",
+] as const;
+
+export type SupplyStatus = (typeof SUPPLY_STATUSES)[number];
+export type SupplySortBy = "updatedAt" | "quantityAvailable" | "name";
+
+export type Supply = {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  name: string;
+  category: string;
+  status: SupplyStatus;
+  quantityAvailable: number;
+  unitPrice: number;
+  currency: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ListSuppliesInput = {
+  page: number;
+  pageSize: number;
+  status?: SupplyStatus;
+  supplierId?: string;
+  category?: string;
+  sortBy: SupplySortBy;
+  sortOrder: SortOrder;
+};
+
+export type CreateSupplyInput = {
+  supplierId: string;
+  supplierName: string;
+  name: string;
+  category: string;
+  quantityAvailable: number;
+  unitPrice: number;
+  currency?: string;
+  status?: SupplyStatus;
+};
+
+export type UpdateSupplyInput = {
+  supplierId?: string;
+  supplierName?: string;
+  name?: string;
+  category?: string;
+  quantityAvailable?: number;
+  unitPrice?: number;
+  currency?: string;
+  status?: SupplyStatus;
+};

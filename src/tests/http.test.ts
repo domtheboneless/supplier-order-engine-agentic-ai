@@ -7,6 +7,9 @@ import { createLogger } from "../logger.js";
 import { InMemoryOrderRepository } from "../order-repository.js";
 import { OrderService } from "../order-service.js";
 import { seedOrders } from "../seed-data.js";
+import { InMemorySupplyRepository } from "../supply-repository.js";
+import { seedSupplies } from "../supply-seed-data.js";
+import { SupplyService } from "../supply-service.js";
 
 function buildUrl(serverAddress: AddressInfo, path: string) {
   return `http://127.0.0.1:${serverAddress.port}${path}`;
@@ -43,16 +46,40 @@ function postJson(
   url: string,
   payload: unknown,
 ): Promise<{ statusCode: number; body: unknown; headers: http.IncomingHttpHeaders }> {
+  return requestJsonWithBody("POST", url, payload);
+}
+
+function putJson(
+  url: string,
+  payload: unknown,
+): Promise<{ statusCode: number; body: unknown; headers: http.IncomingHttpHeaders }> {
+  return requestJsonWithBody("PUT", url, payload);
+}
+
+function deleteJson(
+  url: string,
+): Promise<{ statusCode: number; body: unknown; headers: http.IncomingHttpHeaders }> {
+  return requestJsonWithBody("DELETE", url);
+}
+
+function requestJsonWithBody(
+  method: "POST" | "PUT" | "DELETE",
+  url: string,
+  payload?: unknown,
+): Promise<{ statusCode: number; body: unknown; headers: http.IncomingHttpHeaders }> {
   return new Promise((resolve, reject) => {
-    const serialized = JSON.stringify(payload);
+    const serialized = payload === undefined ? undefined : JSON.stringify(payload);
     const request = http.request(
       url,
       {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "content-length": Buffer.byteLength(serialized),
-        },
+        method,
+        headers:
+          serialized === undefined
+            ? undefined
+            : {
+                "content-type": "application/json",
+                "content-length": Buffer.byteLength(serialized),
+              },
       },
       (response) => {
         const chunks: Buffer[] = [];
@@ -78,7 +105,9 @@ function postJson(
     );
 
     request.on("error", reject);
-    request.write(serialized);
+    if (serialized !== undefined) {
+      request.write(serialized);
+    }
     request.end();
   });
 }
@@ -86,7 +115,8 @@ function postJson(
 export async function runHttpTests() {
   const server = createAppServer({
     logger: createLogger("error"),
-    service: new OrderService(new InMemoryOrderRepository(seedOrders)),
+    orderService: new OrderService(new InMemoryOrderRepository(seedOrders)),
+    supplyService: new SupplyService(new InMemorySupplyRepository(seedSupplies)),
   });
 
   server.listen(0);
@@ -164,13 +194,90 @@ export async function runHttpTests() {
     assert.equal(invalidCreateResponse.statusCode, 400);
     assert.equal(invalidCreatePayload.error.code, "VALIDATION_ERROR");
 
+    const suppliesResponse = await requestJson(
+      buildUrl(address, "/supplies?page=1&pageSize=2&sortBy=updatedAt&sortOrder=desc"),
+    );
+    const suppliesPayload = suppliesResponse.body as {
+      data: Array<{ id: string }>;
+      pagination: { totalItems: number };
+    };
+
+    assert.equal(suppliesResponse.statusCode, 200);
+    assert.equal(suppliesPayload.data.length, 2);
+    assert.equal(suppliesPayload.pagination.totalItems, 4);
+
+    const supplyDetailResponse = await requestJson(buildUrl(address, "/supplies/SPL-1002"));
+    const supplyDetailPayload = supplyDetailResponse.body as {
+      data: { supplier: { name: string } };
+    };
+
+    assert.equal(supplyDetailResponse.statusCode, 200);
+    assert.equal(supplyDetailPayload.data.supplier.name, "Blue Ocean Logistics");
+
+    const createSupplyResponse = await postJson(buildUrl(address, "/supplies"), {
+      supplierId: "SUP-010",
+      supplierName: "Future Parts",
+      name: "Valve Kit",
+      category: "Mechanical",
+      quantityAvailable: 30,
+      unitPrice: 49.9,
+    });
+    const createSupplyPayload = createSupplyResponse.body as {
+      data: { id: string; stock: { quantityAvailable: number } };
+    };
+
+    assert.equal(createSupplyResponse.statusCode, 201);
+    assert.equal(createSupplyPayload.data.id, "SPL-1005");
+    assert.equal(createSupplyPayload.data.stock.quantityAvailable, 30);
+    assert.equal(createSupplyResponse.headers.location, "/supplies/SPL-1005");
+
+    const updateSupplyResponse = await putJson(buildUrl(address, "/supplies/SPL-1005"), {
+      quantityAvailable: 10,
+      status: "LOW_STOCK",
+    });
+    const updateSupplyPayload = updateSupplyResponse.body as {
+      data: { status: string; stock: { quantityAvailable: number } };
+    };
+
+    assert.equal(updateSupplyResponse.statusCode, 200);
+    assert.equal(updateSupplyPayload.data.status, "LOW_STOCK");
+    assert.equal(updateSupplyPayload.data.stock.quantityAvailable, 10);
+
+    const invalidUpdateResponse = await putJson(buildUrl(address, "/supplies/SPL-1005"), {});
+    const invalidUpdatePayload = invalidUpdateResponse.body as {
+      error: { code: string };
+    };
+
+    assert.equal(invalidUpdateResponse.statusCode, 400);
+    assert.equal(invalidUpdatePayload.error.code, "VALIDATION_ERROR");
+
+    const deleteSupplyResponse = await deleteJson(buildUrl(address, "/supplies/SPL-1005"));
+    const deleteSupplyPayload = deleteSupplyResponse.body as {
+      data: { id: string; deleted: boolean };
+    };
+
+    assert.equal(deleteSupplyResponse.statusCode, 200);
+    assert.equal(deleteSupplyPayload.data.id, "SPL-1005");
+    assert.equal(deleteSupplyPayload.data.deleted, true);
+
+    const deletedSupplyDetailResponse = await requestJson(buildUrl(address, "/supplies/SPL-1005"));
+    const deletedSupplyDetailPayload = deletedSupplyDetailResponse.body as {
+      error: { code: string };
+    };
+
+    assert.equal(deletedSupplyDetailResponse.statusCode, 404);
+    assert.equal(deletedSupplyDetailPayload.error.code, "SUPPLY_NOT_FOUND");
+
     const openApiResponse = await requestJson(buildUrl(address, "/openapi.json"));
     const openApiPayload = openApiResponse.body as {
-      paths: Record<string, { post?: unknown }>;
+      paths: Record<string, { post?: unknown; put?: unknown; delete?: unknown }>;
     };
 
     assert.equal(openApiResponse.statusCode, 200);
     assert.ok(openApiPayload.paths["/orders"]?.post);
+    assert.ok(openApiPayload.paths["/supplies"]?.post);
+    assert.ok(openApiPayload.paths["/supplies/{supplyId}"]?.put);
+    assert.ok(openApiPayload.paths["/supplies/{supplyId}"]?.delete);
   } finally {
     server.close();
   }
